@@ -408,12 +408,16 @@ def cache_builder(edges, comment_size, force_cache, loc_add=0, loc_del=0):
                 continue
 
             owner, repo_name = repository_name.split("/", 1)
-            additions, deletions, my_commits = recursive_loc(
-                owner,
-                repo_name,
-                cache_rows,
-                cache_header,
-            )
+            try:
+                additions, deletions, my_commits = recursive_loc(
+                    owner,
+                    repo_name,
+                    cache_rows,
+                    cache_header,
+                )
+            except RuntimeError as error:
+                print(f"   Skipping {repository_name}: {error}")
+                continue
             cache_rows[index] = (
                 f"{stored_hash} {current_commit_count} {my_commits} "
                 f"{additions} {deletions}\n"
