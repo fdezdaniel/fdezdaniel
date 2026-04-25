@@ -1,0 +1,4 @@
+# Override LOC stats for repos that fail GitHub GraphQL API (e.g. too many commits).
+# Format: repo_name commits additions deletions
+# Values calculated locally via git log --author=fdezdaniel --numstat
+ProtoConsent/data 75 931570 27758

@@ -19,6 +19,7 @@ load_dotenv()
 # GitHub API and local file layout used by the script.
 GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
 CACHE_DIR = Path("cache")
+OVERRIDES_PATH = CACHE_DIR / "overrides.txt"
 SVG_FILES = ("dark_mode.svg", "light_mode.svg")
 
 # Fixed values that shape the generated README content.
@@ -417,6 +418,9 @@ def cache_builder(edges, comment_size, force_cache, loc_add=0, loc_del=0):
                 )
             except RuntimeError as error:
                 print(f"   Skipping {repository_name}: {error}")
+                cache_rows[index] = (
+                    f"{stored_hash} {current_commit_count} 0 0 0\n"
+                )
                 continue
             cache_rows[index] = (
                 f"{stored_hash} {current_commit_count} {my_commits} "
@@ -598,6 +602,26 @@ def commit_counter(comment_size):
     return total_commits
 
 
+# Load pre-calculated stats for repos that fail the GraphQL API.
+def load_overrides():
+    if not OVERRIDES_PATH.exists():
+        return 0, 0, 0
+    added = 0
+    deleted = 0
+    commits = 0
+    with OVERRIDES_PATH.open("r") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) == 4:
+                commits += int(parts[1])
+                added += int(parts[2])
+                deleted += int(parts[3])
+    return commits, added, deleted
+
+
 # Fetch the GitHub user id used later to identify which commits belong to the current profile.
 def user_getter(username):
     query_count("user_getter")
@@ -707,6 +731,15 @@ def main():
 
     follower_data, follower_time = perf_counter(follower_getter, USER_NAME)
     print_duration("followers", follower_time)
+
+    # Merge pre-calculated stats for repos that fail the API.
+    override_commits, override_add, override_del = load_overrides()
+    if override_commits:
+        commit_data += override_commits
+        total_loc[0] += override_add
+        total_loc[1] += override_del
+        total_loc[2] += override_add - override_del
+        print(f"   overrides:            +{override_commits} commits, +{override_add} add, +{override_del} del")
 
     # Keep the boolean cache flag in the last slot untouched and format only the displayed LOC values.
     total_loc[:-1] = [f"{value:,}" for value in total_loc[:-1]]
