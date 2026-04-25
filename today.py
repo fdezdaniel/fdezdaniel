@@ -1,10 +1,9 @@
-"""Copyright 2026 Vikbg.
+"""GitHub profile README generator.
 
+Based on work by Vikbg (https://github.com/Vikbg/Vikbg).
 SPDX-License-Identifier: Apache-2.0
-Keep the attribution notice from the repository NOTICE file when redistributing.
 """
 
-import datetime
 import hashlib
 import os
 import re
@@ -12,7 +11,6 @@ import time
 from pathlib import Path
 
 import requests
-from dateutil import relativedelta
 from dotenv import load_dotenv
 from lxml.etree import parse
 
@@ -21,17 +19,13 @@ load_dotenv()
 # GitHub API and local file layout used by the script.
 GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
 CACHE_DIR = Path("cache")
-ARCHIVE_PATH = CACHE_DIR / "repository_archive.txt"
 SVG_FILES = ("dark_mode.svg", "light_mode.svg")
 
 # Fixed values that shape the generated README content.
 COMMENT_BLOCK_SIZE = 7
-BIRTHDAY = datetime.datetime(2010, 10, 1)
-ARCHIVE_USER_ID = "U_kgDOC15JXw"
 CACHE_COMMENT_LINE = "This line is a comment block. Write whatever you want here.\n"
 
 # Visual widths used when inserting dot padding in the SVG text fields.
-AGE_DATA_WIDTH = 49
 COMMIT_DATA_WIDTH = 22
 LOC_DATA_WIDTH = 25
 FOLLOWER_DATA_WIDTH = 10
@@ -75,23 +69,6 @@ def configure_environment():
 def cache_file_path():
     hashed_user = hashlib.sha256(USER_NAME.encode("utf-8")).hexdigest()
     return CACHE_DIR / f"{hashed_user}.txt"
-
-
-# Convert the configured birthday into a human-readable uptime string for the SVG card.
-def format_age(birthday):
-    diff = relativedelta.relativedelta(datetime.datetime.today(), birthday)
-    parts = [
-        f"{diff.years} year{format_plural(diff.years)}",
-        f"{diff.months} month{format_plural(diff.months)}",
-        f"{diff.days} day{format_plural(diff.days)}",
-    ]
-    suffix = " 🎂" if diff.months == 0 and diff.days == 0 else ""
-    return ", ".join(parts) + suffix
-
-
-# Return the plural suffix used by the age formatter.
-def format_plural(value):
-    return "s" if value != 1 else ""
 
 
 # Turn an HTTP error into a readable exception that includes the current query counters.
@@ -459,47 +436,6 @@ def flush_cache(edges, filename, comment_size):
             handle.write(f"{repository_hash} 0 0 0 0\n")
 
 
-# Merge historical stats from deleted repositories.
-# If the archive file is absent, return zeros so CI and fresh clones still work.
-def add_archive():
-    if not ARCHIVE_PATH.exists():
-        return [0, 0, 0, 0, 0]
-
-    with ARCHIVE_PATH.open("r") as handle:
-        lines = handle.readlines()
-
-    added_loc = 0
-    deleted_loc = 0
-    saved_commits = 0
-    contributed_repos = 0
-
-    for line in lines:
-        parts = line.split()
-
-        # Archive rows are the only lines with a repo hash plus four numeric-ish columns.
-        if len(parts) != 5 or re.fullmatch(r"[0-9a-f]{64}", parts[0]) is None:
-            continue
-        contributed_repos += 1
-        added_loc += int(parts[3])
-        deleted_loc += int(parts[4])
-        if parts[2].isdigit():
-            saved_commits += int(parts[2])
-
-    # Some archive rows may be missing per-repo commit counts, so prefer the proof line if it exists.
-    proof_match = re.search(r"total was (\d+)\.", "".join(lines))
-    archived_commits = saved_commits
-    if proof_match is not None:
-        archived_commits = max(saved_commits, int(proof_match.group(1)))
-
-    return [
-        added_loc,
-        deleted_loc,
-        added_loc - deleted_loc,
-        archived_commits,
-        contributed_repos,
-    ]
-
-
 # Persist partially updated cache data before raising from a failed long-running LOC calculation.
 def force_close_file(cache_rows, cache_header):
     filename = cache_file_path()
@@ -520,7 +456,6 @@ def stars_counter(edges):
 # Open one SVG template and replace the dynamic text fields used by the README card.
 def svg_overwrite(
     filename,
-    age_data,
     commit_data,
     star_data,
     repo_data,
@@ -532,7 +467,6 @@ def svg_overwrite(
     root = tree.getroot()
 
     # Each field has its own width target so the dots keep the card aligned like terminal output.
-    justify_format(root, "age_data", age_data, AGE_DATA_WIDTH)
     justify_format(root, "commit_data", commit_data, COMMIT_DATA_WIDTH)
     justify_format(root, "star_data", star_data, STAR_DATA_WIDTH)
     justify_format(root, "repo_data", repo_data, REPO_DATA_WIDTH)
@@ -691,7 +625,6 @@ def print_duration(label, duration):
 
 # Apply the same computed values to both SVG variants used by the README.
 def update_svg_files(
-    age_data,
     commit_data,
     star_data,
     repo_data,
@@ -702,7 +635,6 @@ def update_svg_files(
     for svg_file in SVG_FILES:
         svg_overwrite(
             svg_file,
-            age_data,
             commit_data,
             star_data,
             repo_data,
@@ -716,9 +648,8 @@ def update_svg_files(
 # 1. load credentials
 # 2. fetch GitHub stats
 # 3. refresh or reuse cache data
-# 4. merge archived repository stats when applicable
-# 5. write both SVG files
-# 6. print timing and query diagnostics
+# 4. write both SVG files
+# 5. print timing and query diagnostics
 def main():
     global OWNER_ID
 
@@ -729,9 +660,6 @@ def main():
     OWNER_ID, user_time = perf_counter(user_getter, USER_NAME)
     print(OWNER_ID)
     print_duration("account data", user_time)
-
-    age_data, age_time = perf_counter(format_age, BIRTHDAY)
-    print_duration("age calculation", age_time)
 
     total_loc, loc_time = perf_counter(
         loc_query,
@@ -759,19 +687,10 @@ def main():
     follower_data, follower_time = perf_counter(follower_getter, USER_NAME)
     print_duration("followers", follower_time)
 
-    # Only this specific user has deleted-repository stats tracked in the archive file.
-    if OWNER_ID == ARCHIVE_USER_ID:
-        archived_data = add_archive()
-        for index in range(len(total_loc) - 1):
-            total_loc[index] += archived_data[index]
-        contrib_data += archived_data[-1]
-        commit_data += archived_data[-2]
-
     # Keep the boolean cache flag in the last slot untouched and format only the displayed LOC values.
     total_loc[:-1] = [f"{value:,}" for value in total_loc[:-1]]
 
     update_svg_files(
-        age_data,
         commit_data,
         star_data,
         repo_data,
@@ -782,7 +701,6 @@ def main():
 
     total_runtime = (
         user_time
-        + age_time
         + loc_time
         + commit_time
         + star_time
