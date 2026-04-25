@@ -26,6 +26,7 @@ SVG_FILES = ("dark_mode.svg", "light_mode.svg")
 OWNED_REPOS = ["OWNER"]
 ALL_REPOS = ["OWNER", "COLLABORATOR", "ORGANIZATION_MEMBER"]
 CACHE_COMMENT_LINE = "This line is a comment block. Write whatever you want here.\n"
+COMMENT_BLOCK_SIZE = 7
 
 # Visual widths used when inserting dot padding in the SVG text fields.
 COMMIT_DATA_WIDTH = 22
