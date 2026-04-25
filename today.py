@@ -22,8 +22,9 @@ CACHE_DIR = Path("cache")
 OVERRIDES_PATH = CACHE_DIR / "overrides.txt"
 SVG_FILES = ("dark_mode.svg", "light_mode.svg")
 
-# Fixed values that shape the generated README content.
-COMMENT_BLOCK_SIZE = 7
+# Repository affiliations used by each stat query.
+OWNED_REPOS = ["OWNER"]
+ALL_REPOS = ["OWNER", "COLLABORATOR", "ORGANIZATION_MEMBER"]
 CACHE_COMMENT_LINE = "This line is a comment block. Write whatever you want here.\n"
 
 # Visual widths used when inserting dot padding in the SVG text fields.
@@ -708,7 +709,7 @@ def main():
 
     total_loc, loc_time = perf_counter(
         loc_query,
-        ["OWNER", "COLLABORATOR", "ORGANIZATION_MEMBER"],
+        ALL_REPOS,
         COMMENT_BLOCK_SIZE,
     )
     print_duration("LOC (cached)" if total_loc[-1] else "LOC (no cache)", loc_time)
@@ -716,16 +717,20 @@ def main():
     commit_data, commit_time = perf_counter(commit_counter, COMMENT_BLOCK_SIZE)
     print_duration("commit count", commit_time)
 
-    star_data, star_time = perf_counter(graph_repos_stars, "stars", ["OWNER"])
+    star_data, star_time = perf_counter(
+        graph_repos_stars,
+        "stars",
+        ALL_REPOS,
+    )
     print_duration("stars", star_time)
 
-    repo_data, repo_time = perf_counter(graph_repos_stars, "repos", ["OWNER"])
+    repo_data, repo_time = perf_counter(graph_repos_stars, "repos", OWNED_REPOS)
     print_duration("repos", repo_time)
 
     contrib_data, contrib_time = perf_counter(
         graph_repos_stars,
         "repos",
-        ["OWNER", "COLLABORATOR", "ORGANIZATION_MEMBER"],
+        ALL_REPOS,
     )
     print_duration("contributed repos", contrib_time)
 
