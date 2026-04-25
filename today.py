@@ -85,33 +85,50 @@ def raise_request_error(operation_name, response):
 
 # Send one GraphQL request and normalize all failure cases in one place.
 # If a cache write is in progress, partial_cache lets us persist whatever was computed before raising.
+# Retries up to MAX_RETRIES times on 502/503 errors with exponential backoff.
+MAX_RETRIES = 4
+RETRY_BASE_DELAY = 5
+
 def graphql_request(operation_name, query, variables, partial_cache=None):
-    try:
-        response = requests.post(
-            GITHUB_GRAPHQL_URL,
-            json={"query": query, "variables": variables},
-            headers=HEADERS,
-            timeout=30,
-        )
-    except requests.RequestException as error:
-        if partial_cache is not None:
-            force_close_file(*partial_cache)
-        raise RuntimeError(f"{operation_name} request failed: {error}") from error
+    last_response = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            response = requests.post(
+                GITHUB_GRAPHQL_URL,
+                json={"query": query, "variables": variables},
+                headers=HEADERS,
+                timeout=30,
+            )
+        except requests.RequestException as error:
+            if partial_cache is not None:
+                force_close_file(*partial_cache)
+            raise RuntimeError(f"{operation_name} request failed: {error}") from error
+
+        last_response = response
+
+        # Retry on transient server errors.
+        if response.status_code in (502, 503) and attempt < MAX_RETRIES:
+            delay = RETRY_BASE_DELAY * (2 ** attempt)
+            print(f"   {operation_name}: {response.status_code}, retry {attempt + 1}/{MAX_RETRIES} in {delay}s")
+            time.sleep(delay)
+            continue
+
+        break
 
     # Non-200 responses are handled before trying to parse the body as GraphQL JSON.
-    if response.status_code != 200:
+    if last_response.status_code != 200:
         if partial_cache is not None:
             force_close_file(*partial_cache)
-        raise_request_error(operation_name, response)
+        raise_request_error(operation_name, last_response)
 
     # GitHub can still return malformed data, so JSON parsing gets its own guarded error path.
     try:
-        payload = response.json()
+        payload = last_response.json()
     except ValueError as error:
         if partial_cache is not None:
             force_close_file(*partial_cache)
         raise RuntimeError(
-            f"{operation_name} returned invalid JSON: {response.text}"
+            f"{operation_name} returned invalid JSON: {last_response.text}"
         ) from error
 
     # GraphQL-level errors still arrive inside a 200 response, so check them explicitly.
