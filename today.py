@@ -25,6 +25,8 @@ SVG_FILES = ("dark_mode.svg", "light_mode.svg")
 # Repository affiliations used by each stat query.
 OWNED_REPOS = ["OWNER"]
 ALL_REPOS = ["OWNER", "COLLABORATOR", "ORGANIZATION_MEMBER"]
+# Only count stars/repos from these owners (filters out unrelated org memberships).
+COUNTED_OWNERS = None  # populated from USER_NAME at runtime
 CACHE_COMMENT_LINE = "This line is a comment block. Write whatever you want here.\n"
 COMMENT_BLOCK_SIZE = 7
 
@@ -62,10 +64,11 @@ def require_env(name):
 
 # Build the authorization header and target GitHub username used by all later API calls.
 def configure_environment():
-    global HEADERS, USER_NAME
+    global HEADERS, USER_NAME, COUNTED_OWNERS
     access_token = require_env("ACCESS_TOKEN")
     USER_NAME = require_env("USER_NAME")
     HEADERS = {"authorization": f"token {access_token}"}
+    COUNTED_OWNERS = {USER_NAME, "ProtoConsent"}
 
 
 # Derive the per-user cache filename from the GitHub login so different users do not share cache data.
@@ -160,6 +163,7 @@ def graph_repos_stars(count_type, owner_affiliation):
                 edges {
                     node {
                         ... on Repository {
+                            owner { login }
                             stargazers {
                                 totalCount
                             }
@@ -184,9 +188,12 @@ def graph_repos_stars(count_type, owner_affiliation):
         data = graphql_request("graph_repos_stars", query, variables)
         repositories = data["user"]["repositories"]
 
-        # totalCount is the connection-wide total, while stars must be accumulated page by page.
+        edges = repositories["edges"]
+        if count_type == "stars" and COUNTED_OWNERS is not None:
+            edges = [e for e in edges if e["node"]["owner"]["login"] in COUNTED_OWNERS]
+
         total_repositories = repositories["totalCount"]
-        total_stars += stars_counter(repositories["edges"])
+        total_stars += stars_counter(edges)
 
         if not repositories["pageInfo"]["hasNextPage"]:
             break
