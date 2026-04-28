@@ -323,6 +323,7 @@ def loc_query(owner_affiliation, comment_size=0, force_cache=False):
                     node {
                         ... on Repository {
                             nameWithOwner
+                            owner { login }
                             defaultBranchRef {
                                 target {
                                     ... on Commit {
@@ -360,6 +361,9 @@ def loc_query(owner_affiliation, comment_size=0, force_cache=False):
         if not repositories["pageInfo"]["hasNextPage"]:
             break
         cursor = repositories["pageInfo"]["endCursor"]
+
+    if COUNTED_OWNERS is not None:
+        edges = [e for e in edges if e["node"]["owner"]["login"] in COUNTED_OWNERS]
 
     return cache_builder(edges, comment_size, force_cache)
 
