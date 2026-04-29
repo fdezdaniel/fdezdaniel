@@ -365,6 +365,10 @@ def loc_query(owner_affiliation, comment_size=0, force_cache=False):
     if COUNTED_OWNERS is not None:
         edges = [e for e in edges if e["node"]["owner"]["login"] in COUNTED_OWNERS]
 
+    override_names = load_override_names()
+    if override_names:
+        edges = [e for e in edges if e["node"]["nameWithOwner"] not in override_names]
+
     return cache_builder(edges, comment_size, force_cache)
 
 
@@ -613,6 +617,22 @@ def commit_counter(comment_size):
     for line in data[comment_size:]:
         total_commits += int(line.split()[2])
     return total_commits
+
+
+# Return the set of repo names listed in overrides so they can be skipped during cache building.
+def load_override_names():
+    names = set()
+    if not OVERRIDES_PATH.exists():
+        return names
+    with OVERRIDES_PATH.open("r") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) == 4:
+                names.add(parts[0])
+    return names
 
 
 # Load pre-calculated stats for repos that fail the GraphQL API.
